@@ -6,8 +6,8 @@ import re
 
 class GitCL:
     @staticmethod
-    def clone_repo(repo):
-        cl.execute_cmd_print("git clone http://www.github.com/oflynned/" + repo)
+    def clone_repo(account, repo):
+        cl.execute_cmd_print("git clone http://www.github.com/" + account + "/" + repo)
 
     @staticmethod
     def get_commit_changes(repo):

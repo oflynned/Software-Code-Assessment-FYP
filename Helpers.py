@@ -1,6 +1,5 @@
-import subprocess
 import json
-import re
+import subprocess
 
 
 class JSON:
@@ -23,9 +22,33 @@ class CodeFile:
             return f.read()
 
     @staticmethod
-    def analyse_code(repo, file):
-        dir = CommandLine.get_full_dir(repo, file)
-        CommandLine.execute_cmd_get_result("idea metrics")
+    def analyse_code(repo):
+        result = CommandLine.execute_cmd_get_result("cd " + repo + "; radon cc * --total-average").decode("utf-8").split("\n")
+        return result[len(result) - 1]
+
+    @staticmethod
+    def get_cyclomatic_complexity(repo):
+        result = CommandLine.execute_cmd_get_result("cd " + repo + "; radon cc * -a").decode("utf-8").split("\n")
+        return result
+
+    @staticmethod
+    def get_raw_metrics(repo):
+        # TODO parse these results to xml schema or something?
+        result = CommandLine.execute_cmd_get_result("cd " + repo + "; radon raw *").decode("utf-8")
+        pass
+
+    @staticmethod
+    def get_halstead_metrics(repo):
+        pass
+
+    @staticmethod
+    def get_maintainability_index(repo):
+        result = CommandLine.execute_cmd_get_result("cd " + repo + "; radon mi *").decode("utf-8")
+        return result
+
+    @staticmethod
+    def export_metrics(data):
+        pass
 
 
 class CommandLine:

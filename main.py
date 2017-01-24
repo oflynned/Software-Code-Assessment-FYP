@@ -5,8 +5,11 @@ import requests
 from requests.auth import HTTPBasicAuth
 
 from Git import GitCL
+from Helpers import CodeFile
 
-REPO_NAME = "NeurobranchBackend"
+# samshadwell/TrumpScript
+REPO_ACCOUNT = "samshadwell"
+REPO_NAME = "TrumpScript"
 
 
 def get_repo_data():
@@ -14,16 +17,20 @@ def get_repo_data():
     head_list = []
 
     i = 1
-    commit_count = -1
+    curr_commit_count = -1
+    # to limit over sampling as I only have 5000 requests
+    max_commit_limit = 100
 
-    while commit_count != 0:
+    print("Getting commits for", REPO_ACCOUNT, "/", REPO_NAME, "...")
+
+    while curr_commit_count != 0:
         req = requests.get(
-            "http://api.github.com/repos/oflynned/" + REPO_NAME + "/commits?per_page=100&page=" + str(i),
+            "http://api.github.com/repos/" + REPO_ACCOUNT + "/" + REPO_NAME + "/commits?per_page=100&page=" + str(i),
             auth=HTTPBasicAuth(username, password))
         i += 1
 
         json_full_history = req.json()
-        commit_count = len(json_full_history)
+        curr_commit_count = len(json_full_history)
 
         sha_commit_list = []
         for item in json_full_history:
@@ -34,19 +41,24 @@ def get_repo_data():
             head_list.append(sha[0:7])
 
         if not os.path.isdir(REPO_NAME):
-            GitCL.clone_repo(REPO_NAME)
+            GitCL.clone_repo(REPO_ACCOUNT, REPO_NAME)
 
     print("Total commits:", len(head_list))
+
+    newest_commit = head_list[len(head_list) - 1]
+    oldest_commit = head_list[0]
+
+    GitCL.set_repo_commit(REPO_NAME, oldest_commit)
 
     # inverted traversal of the commit list (oldest to newest)
     for head in reversed(head_list):
         GitCL.set_repo_commit(REPO_NAME, head)
         files = GitCL.get_files_changed(REPO_NAME, head)
 
-        print(files, "\n")
+        # print(files, "\n")
 
         # iterate through files changed to get score
-        # CodeFile.analyse_code(REPO_NAME, files[0])
+        print(CodeFile.analyse_code(REPO_NAME))
 
 
 def main():
