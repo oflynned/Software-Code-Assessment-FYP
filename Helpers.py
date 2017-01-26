@@ -1,5 +1,8 @@
 import json
 import subprocess
+import base64
+import re
+import csv
 
 
 class JSON:
@@ -10,8 +13,12 @@ class JSON:
 
 class Commit:
     @staticmethod
-    def get_sha():
-        pass
+    def obfuscate_identity(real_identity):
+        return base64.b16encode(bytes(real_identity, 'utf-8'))
+
+    @staticmethod
+    def deobfuscate_identity(hashed_identity):
+        return base64.b16decode(bytes(hashed_identity, 'utf-8'))
 
 
 class CodeFile:
@@ -23,7 +30,8 @@ class CodeFile:
 
     @staticmethod
     def analyse_code(repo):
-        result = CommandLine.execute_cmd_get_result("cd " + repo + "; radon cc * --total-average").decode("utf-8").split("\n")
+        result = CommandLine.execute_cmd_get_result("cd " + repo + "; radon cc * --total-average").decode(
+            "utf-8").split("\n")
         return result[len(result) - 1]
 
     @staticmethod
@@ -34,8 +42,36 @@ class CodeFile:
     @staticmethod
     def get_raw_metrics(repo):
         # TODO parse these results to xml schema or something?
-        result = CommandLine.execute_cmd_get_result("cd " + repo + "; radon raw *").decode("utf-8")
-        pass
+        results = CommandLine.execute_cmd_get_result("cd " + repo + "; radon raw *").decode("utf-8").split("\n")
+        metrics = []
+
+        for i, result in enumerate(results):
+            # file name
+            if i % 12 == 0:
+                # file name, loc, lloc, sloc, num comments, single comments, multi, blank
+                # TODO comments tuple: c%l, c%s, c+m+l <<< not dealt with rn
+                metric = dict()
+                metric["file_name"] = results[i].strip()
+                metric["loc"] = CodeFile.strip_data(results[i+1])
+                metric["lloc"] = CodeFile.strip_data(results[i+2])
+                metric["sloc"] = CodeFile.strip_data(results[i+3])
+                metric["comments_total_number"] = CodeFile.strip_data(results[i+4])
+                metric["comments_single_line"] = CodeFile.strip_data(results[i+5])
+                metric["comments_multi_line"] = CodeFile.strip_data(results[i+6])
+                metric["comments_blank_line"] = CodeFile.strip_data(results[i+7])
+
+                metrics.append(metric)
+
+        """
+        for i, metric in enumerate(metrics):
+            print(metric, "\n")
+        """
+
+        return metrics
+
+    @staticmethod
+    def strip_data(item):
+        return re.sub("[^0-9]", "", str(item).strip())
 
     @staticmethod
     def get_halstead_metrics(repo):
@@ -47,8 +83,12 @@ class CodeFile:
         return result
 
     @staticmethod
-    def export_metrics(data):
-        pass
+    def export_metrics(metrics):
+        with open('raw_metrics.csv', 'w') as f:
+            for metric in metrics:
+                w = csv.DictWriter(f, metric.keys())
+                w.writeheader()
+                w.writerow(metric)
 
 
 class CommandLine:
