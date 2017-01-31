@@ -46,15 +46,20 @@ def get_repo_data():
 
         i += 1
 
-    print("Analysing", str(len(commit_list)), "commits ...")
+    print("Analysing", str(len(commit_list)), "commits", "...")
 
     newest_commit_head = commit_list[len(commit_list) - 1][1]
     oldest_commit_head = commit_list[0][1]
     GitCL.set_repo_commit(REPO_NAME, oldest_commit_head)
-    raw_metrics = []
 
+    raw_metrics = []
+    average_complexity = []
+    cyclomatic_metrics = []
+    maintainability_metrics = []
+
+    # limit list to first 25
     commit_list = list(reversed(commit_list))
-    commit_list = commit_list[:25]
+    # commit_list = commit_list[:25]
 
     # inverted traversal of the commit list (oldest to newest)
     for i, commit in enumerate(commit_list):
@@ -67,13 +72,18 @@ def get_repo_data():
         GitCL.set_repo_commit(REPO_NAME, head)
 
         # iterate through files changed to get score
-        raw_metrics.append(CodeFile.get_cyclomatic_complexity(REPO_NAME, commit))
         print("Appending metrics for commit", commit[1], str(i))
+        raw_metrics.append(CodeFile.get_raw_metrics(REPO_NAME, commit))
+        cyclomatic_metrics.append(CodeFile.get_cyclomatic_complexity(REPO_NAME, commit))
+        maintainability_metrics.append(CodeFile.get_maintainability_index(REPO_NAME, commit))
+        average_complexity.append(CodeFile.get_average_complexity(REPO_NAME, commit))
 
-        # raw_metrics.append(CodeFile.get_raw_metrics(REPO_NAME, commit))
-
-    print("Exporting metrics for", REPO_NAME, "...")
-    CodeFile.export_metrics(REPO_NAME, raw_metrics)
+        # perhaps move to end of function?
+        print("Exporting metrics for", REPO_NAME, "...")
+        CodeFile.export_metrics(REPO_NAME, "raw", raw_metrics)
+        CodeFile.export_metrics(REPO_NAME, "cyclomatic", cyclomatic_metrics)
+        CodeFile.export_metrics(REPO_NAME, "maintainability", maintainability_metrics)
+        CodeFile.export_metrics(REPO_NAME, "average_complexity", average_complexity)
 
 
 def main():

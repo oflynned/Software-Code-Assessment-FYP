@@ -47,10 +47,7 @@ class CodeFile:
     def purge_repo_analysis(project):
         pass
 
-    """
-    BELOW IS FOR RADON
-    """
-
+    # Radon is currently used as the metrics factory
     @staticmethod
     def analyse_code(repo):
         result = CommandLine.execute_cmd_get_result("cd " + repo + "; radon cc *").decode(
@@ -58,72 +55,66 @@ class CodeFile:
         return result[len(result) - 1]
 
     @staticmethod
-    def get_cyclomatic_complexity(repo, commit):
-        results = CommandLine.execute_cmd_get_result("cd " + repo + "; radon cc * -s -j").decode("utf-8").split("\n")
-        metrics = []
+    def strip_data(item):
+        return re.sub("[^0-9]", "", str(item).strip())
 
+    @staticmethod
+    def export_metrics(repo, metric_type, metrics):
+        with open(repo + '_' + metric_type + '_metrics' + '.json', 'w') as f:
+            f.write(JSON.pretty_print_json(metrics))
+
+    @staticmethod
+    def get_json_from_cmd(cmd_output):
+        return json.loads(str(cmd_output[0]))
+
+    @staticmethod
+    def get_commit_details(commit):
         detail = dict()
         detail["sha"] = commit[0]
         detail["head"] = commit[1]
         detail["author"] = commit[2]
         detail["time"] = commit[3]
+        return detail
 
-        metrics.append(detail)
-        results = json.loads(str(results[0]))
-        metrics.append(results)
+    @staticmethod
+    def get_cyclomatic_complexity(repo, commit):
+        results = CommandLine.execute_cmd_get_result("cd " + repo + "; radon cc * -s -j").decode("utf-8").split("\n")
+        metrics = list()
+
+        metrics.append(CodeFile.get_commit_details(commit))
+        metrics.append(CodeFile.get_json_from_cmd(results))
 
         return metrics
 
     @staticmethod
     def get_raw_metrics(repo, commit):
-        results = CommandLine.execute_cmd_get_result("cd " + repo + "; radon raw *").decode("utf-8").split("\n")
-        metrics = []
+        results = CommandLine.execute_cmd_get_result("cd " + repo + "; radon raw * -j").decode("utf-8").split("\n")
+        metrics = list()
 
-        detail = dict()
-        detail["sha"] = commit[0]
-        detail["head"] = commit[1]
-        detail["author"] = commit[2]
-        detail["time"] = commit[3]
-        metrics.append(detail)
-
-        for i, result in enumerate(results):
-            # file name
-            if i % 12 == 0:
-                # file name, loc, lloc, sloc, num comments, single comments, multi, blank
-                metric = dict()
-                metric["file_name"] = results[i].strip()
-                metric["loc"] = CodeFile.strip_data(results[i + 1])
-                metric["lloc"] = CodeFile.strip_data(results[i + 2])
-                metric["sloc"] = CodeFile.strip_data(results[i + 3])
-                metric["comments_total_number"] = CodeFile.strip_data(results[i + 4])
-                metric["comments_single_line"] = CodeFile.strip_data(results[i + 5])
-                metric["comments_multi_line"] = CodeFile.strip_data(results[i + 6])
-                metric["comments_blank_line"] = CodeFile.strip_data(results[i + 7])
-
-                metrics.append(metric)
-
-        for i, metric in enumerate(metrics):
-            print(metric, "\n")
+        metrics.append(CodeFile.get_commit_details(commit))
+        metrics.append(CodeFile.get_json_from_cmd(results))
 
         return metrics
 
     @staticmethod
-    def strip_data(item):
-        return re.sub("[^0-9]", "", str(item).strip())
+    def get_maintainability_index(repo, commit):
+        results = CommandLine.execute_cmd_get_result("cd " + repo + "; radon mi * -j").decode("utf-8").split("\n")
+        metrics = list()
+
+        metrics.append(CodeFile.get_commit_details(commit))
+        metrics.append(CodeFile.get_json_from_cmd(results))
+
+        return metrics
 
     @staticmethod
-    def get_halstead_metrics(repo):
-        pass
+    def get_average_complexity(repo, commit):
+        results = CommandLine.execute_cmd_get_result("cd " + repo + "; radon cc * --total-average -j").decode("utf-8").split("\n")
+        metrics = list()
 
-    @staticmethod
-    def get_maintainability_index(repo):
-        result = CommandLine.execute_cmd_get_result("cd " + repo + "; radon mi *").decode("utf-8")
-        return result
+        metrics.append(CodeFile.get_commit_details(commit))
+        metrics.append(CodeFile.get_json_from_cmd(results))
 
-    @staticmethod
-    def export_metrics(repo, metrics):
-        with open(repo + '_raw_metrics.json', 'w') as f:
-            f.write(JSON.pretty_print_json(metrics))
+        return metrics
 
 
 class CommandLine:
