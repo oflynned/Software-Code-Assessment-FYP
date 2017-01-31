@@ -7,6 +7,8 @@ from requests.auth import HTTPBasicAuth
 from Git import GitCL
 from Helpers import CodeFile
 
+import json
+
 # samshadwell/TrumpScript
 # oflynned/AI-Art
 
@@ -46,42 +48,32 @@ def get_repo_data():
 
     print("Analysing", str(len(commit_list)), "commits ...")
 
-    """
-
-    for commit in reversed(commit_list):
-        # commit[2] = Commit.obfuscate_identity(commit[2])
-        print(commit)
-
-    print("Total commits:", len(commit_list))
-    oldest_commit = commit_list[1]
-    GitCL.set_repo_commit(REPO_NAME, oldest_commit[1])
-    author = oldest_commit[2]
-    time = oldest_commit[3]
-    CodeFile.get_raw_metrics(REPO_NAME)
-    """
-
     newest_commit_head = commit_list[len(commit_list) - 1][1]
     oldest_commit_head = commit_list[0][1]
     GitCL.set_repo_commit(REPO_NAME, oldest_commit_head)
     raw_metrics = []
 
+    commit_list = list(reversed(commit_list))
+    commit_list = commit_list[:25]
+
     # inverted traversal of the commit list (oldest to newest)
-    for i, commit in enumerate(reversed(commit_list)):
+    for i, commit in enumerate(commit_list):
+        head = commit[1]
         author = commit[2]
         time = commit[3]
+        version = str(i + 1)
 
-        GitCL.set_repo_commit(REPO_NAME, commit[1])
-        # files = GitCL.get_files_changed(REPO_NAME, commit[1])
-        # print(files, "\n")
+        print("Commit " + version, head, author, time)
+        GitCL.set_repo_commit(REPO_NAME, head)
 
         # iterate through files changed to get score
-        # print(CodeFile.analyse_code(REPO_NAME), author, time)
-        print(CodeFile.get_raw_metrics(REPO_NAME))
-        raw_metrics.append(CodeFile.get_raw_metrics(REPO_NAME))
+        raw_metrics.append(CodeFile.get_cyclomatic_complexity(REPO_NAME, commit))
         print("Appending metrics for commit", commit[1], str(i))
 
+        # raw_metrics.append(CodeFile.get_raw_metrics(REPO_NAME, commit))
+
     print("Exporting metrics for", REPO_NAME, "...")
-    CodeFile.export_metrics(raw_metrics)
+    CodeFile.export_metrics(REPO_NAME, raw_metrics)
 
 
 def main():

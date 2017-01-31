@@ -5,6 +5,9 @@ import re
 
 
 class GitCL:
+    def __init__(self):
+        pass
+
     @staticmethod
     def clone_repo(account, repo):
         cl.execute_cmd_print("git clone http://www.github.com/" + account + "/" + repo)
