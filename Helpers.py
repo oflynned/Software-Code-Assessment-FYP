@@ -2,6 +2,7 @@ import json
 import subprocess
 import base64
 import re
+import os
 
 
 class JSON:
@@ -26,7 +27,7 @@ class Commit:
         return base64.b16decode(bytes(hashed_identity))
 
 
-class CodeFile:
+class File:
     def __init__(self):
         pass
 
@@ -36,32 +37,27 @@ class CodeFile:
         with open(directory, "r") as f:
             return f.read()
 
-    # project version is the commit sequence (ie version 3 if at 3rd commit)
-    @staticmethod
-    def sonar_analysis(repo_dir, version):
-        CommandLine.execute_cmd_print(
-            "cd " + repo_dir + "; sonar-scanner -Dsonar.sources=. -Dsonar.projectKey=" + repo_dir +
-            " -Dsonar.projectVersion=" + str(version))
-
-    @staticmethod
-    def purge_repo_analysis(project):
-        pass
-
-    # Radon is currently used as the metrics factory
-    @staticmethod
-    def analyse_code(repo):
-        result = CommandLine.execute_cmd_get_result("cd " + repo + "; radon cc *").decode(
-            "utf-8").split("\n")
-        return result[len(result) - 1]
-
     @staticmethod
     def strip_data(item):
         return re.sub("[^0-9]", "", str(item).strip())
 
     @staticmethod
-    def export_metrics(repo, metric_type, metrics):
-        with open(repo + '_' + metric_type + '_metrics' + '.json', 'w') as f:
-            f.write(JSON.pretty_print_json(metrics))
+    def export_metrics(repo, metric_type, metrics, commit, is_function=False):
+        if not os.path.exists("Metrics"):
+            os.makedirs("Metrics")
+
+        if not os.path.exists("Metrics/" + repo):
+            os.makedirs("Metrics/" + repo)
+
+        if not os.path.exists("Metrics/" + repo + "/Files/"):
+            os.makedirs("Metrics/" + repo + "/Files/")
+
+        if is_function is True:
+            with open("Metrics/" + repo + "/Files/" + metric_type + "_" + str(commit) + '.json', 'w') as f:
+                f.write(JSON.pretty_print_json(metrics))
+        else:
+            with open("Metrics/" + repo + "/" + metric_type + "_" + str(commit) + '.json', 'w') as f:
+                f.write(JSON.pretty_print_json(metrics))
 
     @staticmethod
     def get_json_from_cmd(cmd_output):
@@ -75,46 +71,6 @@ class CodeFile:
         detail["author"] = commit[2]
         detail["time"] = commit[3]
         return detail
-
-    @staticmethod
-    def get_cyclomatic_complexity(repo, commit):
-        results = CommandLine.execute_cmd_get_result("cd " + repo + "; radon cc * -s -j").decode("utf-8").split("\n")
-        metrics = list()
-
-        metrics.append(CodeFile.get_commit_details(commit))
-        metrics.append(CodeFile.get_json_from_cmd(results))
-
-        return metrics
-
-    @staticmethod
-    def get_raw_metrics(repo, commit):
-        results = CommandLine.execute_cmd_get_result("cd " + repo + "; radon raw * -j").decode("utf-8").split("\n")
-        metrics = list()
-
-        metrics.append(CodeFile.get_commit_details(commit))
-        metrics.append(CodeFile.get_json_from_cmd(results))
-
-        return metrics
-
-    @staticmethod
-    def get_maintainability_index(repo, commit):
-        results = CommandLine.execute_cmd_get_result("cd " + repo + "; radon mi * -j").decode("utf-8").split("\n")
-        metrics = list()
-
-        metrics.append(CodeFile.get_commit_details(commit))
-        metrics.append(CodeFile.get_json_from_cmd(results))
-
-        return metrics
-
-    @staticmethod
-    def get_average_complexity(repo, commit):
-        results = CommandLine.execute_cmd_get_result("cd " + repo + "; radon cc * --total-average -j").decode("utf-8").split("\n")
-        metrics = list()
-
-        metrics.append(CodeFile.get_commit_details(commit))
-        metrics.append(CodeFile.get_json_from_cmd(results))
-
-        return metrics
 
 
 class CommandLine:
