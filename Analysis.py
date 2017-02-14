@@ -47,7 +47,6 @@ class Radon:
         metrics = list()
         metrics.append(File.get_commit_details(commit))
         metrics.append(File.get_json_from_cmd(results))
-        metrics[1]["commit_head"] = commit[1]
 
         return metrics
 
