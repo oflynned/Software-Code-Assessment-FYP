@@ -13,25 +13,33 @@ from Persistence import Persistence
 
 PAGINATION = 100
 
-repos = [
+repos_full = [
     ["oflynned", "AI-Art"],
     ["samshadwell", "TrumpScript"],
     ["joke2k", "faker"],
     ["Russell91", "pythonpy"],
-    ["ajalt", "fuckitpy"]
+    ["ajalt", "fuckitpy"],
+    ["nvbn", "thefuck"],
+    ["binux", "pyspider"],
+    ["scikit-learn", "scikit-learn"]
+]
+
+repos = [
+    ["pyca", "cryptography"]
 ]
 
 
 def iterate_over_commits(repo_name, commit_list):
+    # invert list to iterate from start to end
+    commit_list = list(reversed(commit_list))
     print("Analysing", str(len(commit_list)), "commits", "...")
 
-    # debug drop all tables to clean table constantly
+    # drop already existing tables to scrub properly
     persistence = Persistence()
     persistence.purge_db(repo_name)
 
     # set oldest commit first
     GitCL.set_repo_commit(repo_name, commit_list[0][1])
-
     total_commits = []
 
     # inverted traversal of the commit list (oldest to newest)
@@ -42,7 +50,7 @@ def iterate_over_commits(repo_name, commit_list):
         version = str(i + 1)
 
         # --hard reset to sha head
-        print("Commit " + version, head, author, time)
+        print("\nCommit " + version, head, author, time)
         GitCL.set_repo_commit(repo_name, head)
 
         # iterate through files changed to get score
@@ -51,10 +59,9 @@ def iterate_over_commits(repo_name, commit_list):
         generate_radon_stats(repo_name, commit, persistence)
         total_commits.append(commit)
 
-        # Neo.generate_graph(total_commits)
-
 
 # generate metrics per file changed per commit
+# TODO does not use MongoDB collection
 def generate_file_stats(repo_name, head, i):
     files_changes = GitCL.get_files_changed(repo_name, head)
     for file in files_changes:
@@ -69,30 +76,19 @@ def generate_file_stats(repo_name, head, i):
 
 # generate metrics per commit via radon halstead analysis
 def generate_radon_stats(repo_name, commit, persistence):
-    cyclomatic_metrics = Radon.get_cyclomatic_complexity(repo_name, commit)
-    average_complexity = Radon.get_average_complexity(repo_name, commit)
-    maintainability_metrics = Radon.get_maintainability_index(repo_name, commit)
-
-    commit_head = commit[1]
-    maintainability_metrics[1]["commit"] = commit_head
-
     print("Exporting metrics for", repo_name, "to DB ...")
+    determine_average_complexity(repo_name, commit, persistence)
+    determine_cyclomatic_complexity(repo_name, commit, persistence)
 
-    maintainability_items = list()
-    maintainability_items.append({"commit": commit_head})
 
-    maintainability_keys = dict()
-    for file in maintainability_metrics[1]:
-        maintainability_keys[os.path.splitext(file)[0]] = maintainability_metrics[1][file]
-
-    maintainability_items[0]["files"] = [maintainability_keys]
-
-    JSON.pretty_print_json(maintainability_keys)
-
-    # insert meta data about commits
-    persistence.insert_document(cyclomatic_metrics[0], repo_name, Persistence.COMMITS_COL)
+def determine_average_complexity(repo_name, commit, persistence):
+    average_complexity = Radon.get_average_complexity(repo_name, commit)
     persistence.insert_document(average_complexity[0], repo_name, Persistence.AVG_COMPLEXITY_COL)
-    persistence.insert_document(maintainability_items[0], repo_name, Persistence.MAINTAINABILITY_COL)
+
+
+def determine_cyclomatic_complexity(repo_name, commit, persistence):
+    cyclomatic_metrics = Radon.get_cyclomatic_complexity(repo_name, commit)
+    persistence.insert_document(cyclomatic_metrics[0], repo_name, Persistence.COMMITS_COL)
 
     # this loop complexity is ironic for something to get the complexity over files ...
     # gets the metrics for complexities over functions per file per commit
@@ -101,8 +97,28 @@ def generate_radon_stats(repo_name, commit, persistence):
             curr_file = metric[file]
             if type(curr_file) == list:
                 for item in curr_file:
-                    item["commit"] = commit_head
+                    item["commit"] = commit[1]
                     persistence.insert_document(item, repo_name, Persistence.CYCLOMATIC_COMPLEXITY_COL)
+
+
+# TODO issue with extensions as keys (. operator)
+def determine_maintainability(repo_name, commit, persistence):
+    maintainability_metrics = Radon.get_maintainability_index(repo_name, commit)
+    maintainability_metrics[1]["commit"] = commit[1]
+
+    maintainability_items = list()
+    maintainability_items.append({"commit": commit[1]})
+
+    maintainability_keys = dict()
+    for file in maintainability_metrics[1]:
+        maintainability_keys[os.path.splitext(file)[0]] = maintainability_metrics[1][file]
+
+    print(maintainability_items)
+    maintainability_items[0]["files"] = [maintainability_keys]
+
+    JSON.pretty_print_json(maintainability_keys)
+
+    persistence.insert_document(maintainability_items[0], repo_name, Persistence.MAINTAINABILITY_COL)
 
 
 def print_collection(repo_name, persistence, collection):
@@ -126,13 +142,14 @@ def get_repo_data(repo_name, repo_account, commit_list):
         json_full_history = req.json()
         curr_commit_count = len(json_full_history)
 
-        print(json_full_history)
+        print("Retrieved commit pagination", "(" + str(PAGINATION * i) + ")", "...")
 
         for j, item in enumerate(json_full_history):
-            print(item["author"])
             if item["author"] is not None:
                 commit_list.append(
-                    [item["sha"], item["sha"][0:7], item["commit"]["author"]["email"],
+                    [item["sha"],
+                     item["sha"][0:7],
+                     item["commit"]["author"]["email"],
                      item["commit"]["author"]["date"]])
 
             if not os.path.isdir(repo_name):
