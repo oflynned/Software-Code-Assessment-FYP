@@ -13,7 +13,7 @@ from Persistence import Persistence
 
 PAGINATION = 100
 
-repos_full = [
+repos_self_curated = [
     ["oflynned", "AI-Art"],
     ["samshadwell", "TrumpScript"],
     ["joke2k", "faker"],
@@ -21,14 +21,43 @@ repos_full = [
     ["ajalt", "fuckitpy"],
     ["nvbn", "thefuck"],
     ["binux", "pyspider"],
-    ["scikit-learn", "scikit-learn"],  # <<< issues with first commit?
+    ["scikit-learn", "scikit-learn"],  # <<< issues with keys
     ["pyca", "cryptography"],
     ["pyca", "pyopenssl"]
 ]
 
 repos = [
-    ["samshadwell", "TrumpScript"]
+    ["scikit-learn", "scikit-learn"]
 ]
+
+
+def harvest_repositories(username, password):
+    i = 1
+    curr_repo_count = -1
+    curated_repos = []
+
+    url = "https://api.github.com/search/repositories?q=language:python&order=desc&page=" + str(i)
+    req = requests.get(url, auth=HTTPBasicAuth(username, password)).json()
+    repo_count = req["total_count"]
+
+    # debug sentinel cap of 5 pages of repositories
+    # while curr_repo_count != 0:
+    while i < 2:
+        url = "https://api.github.com/search/repositories?q=language:python&order=desc" + \
+              "&page=" + str(i) + "&per_page=" + str(PAGINATION)
+        req = requests.get(url, auth=HTTPBasicAuth(username, password))
+
+        repo_curation = req.json()
+        curr_repo_count = len(repo_curation)
+
+        print("Retrieved commit pagination", "(" + str(PAGINATION * i) + ")", "...")
+
+        for j, item in enumerate(repo_curation["items"]):
+            curated_repos.append([item["owner"]["login"], item["name"]])
+
+        i += 1
+
+    return repo_count, curated_repos
 
 
 def iterate_over_commits(repo_name, commit_list):
@@ -79,10 +108,15 @@ def generate_file_stats(repo_name, head, i):
 # generate metrics per commit via radon halstead analysis
 def generate_radon_stats(repo_name, commit, persistence):
     print("Exporting metrics for", repo_name, "to DB ...")
-    determine_average_complexity(repo_name, commit, persistence)
-    determine_cyclomatic_complexity(repo_name, commit, persistence)
-    determine_maintainability(repo_name, commit, persistence)
-    determine_raw_metrics(repo_name, commit, persistence)
+    determine_commit_details(repo_name, commit, persistence)
+    # determine_average_complexity(repo_name, commit, persistence)
+    # determine_cyclomatic_complexity(repo_name, commit, persistence)
+    # determine_maintainability(repo_name, commit, persistence)
+    # determine_raw_metrics(repo_name, commit, persistence)
+
+
+def determine_commit_details(repo_name, commit, persistence):
+    persistence.insert_document(File.get_commit_details(commit), repo_name, Persistence.COMMITS_COL)
 
 
 def determine_average_complexity(repo_name, commit, persistence):
@@ -92,7 +126,6 @@ def determine_average_complexity(repo_name, commit, persistence):
 
 def determine_cyclomatic_complexity(repo_name, commit, persistence):
     cyclomatic_metrics = Radon.get_cyclomatic_complexity(repo_name, commit)
-    persistence.insert_document(cyclomatic_metrics[0], repo_name, Persistence.COMMITS_COL)
 
     # this loop complexity is ironic for something to get the complexity over files ...
     # gets the metrics for complexities over functions per file per commit
@@ -181,7 +214,12 @@ def get_repo_data(repo_name, repo_account, commit_list):
 
 
 def main():
-    for repo in repos:
+    username, password = GitCL.get_auth_details()
+    # mass harvesting, uncomment to curate all python repos on GitHub
+    # repos is a list of curated [repo_name, repo_account] of length ~1,511,164
+    repo_count, repos_curated = harvest_repositories(username, password)
+
+    for repo in repos_curated:
         commit_list = []
         repo_account, repo_name = repo[0], repo[1]
         get_repo_data(repo_name, repo_account, commit_list)
