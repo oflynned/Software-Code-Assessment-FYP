@@ -21,11 +21,13 @@ repos_full = [
     ["ajalt", "fuckitpy"],
     ["nvbn", "thefuck"],
     ["binux", "pyspider"],
-    ["scikit-learn", "scikit-learn"]
+    ["scikit-learn", "scikit-learn"],  # <<< issues with first commit?
+    ["pyca", "cryptography"],
+    ["pyca", "pyopenssl"]
 ]
 
 repos = [
-    ["pyca", "cryptography"]
+    ["samshadwell", "TrumpScript"]
 ]
 
 
@@ -79,6 +81,8 @@ def generate_radon_stats(repo_name, commit, persistence):
     print("Exporting metrics for", repo_name, "to DB ...")
     determine_average_complexity(repo_name, commit, persistence)
     determine_cyclomatic_complexity(repo_name, commit, persistence)
+    determine_maintainability(repo_name, commit, persistence)
+    determine_raw_metrics(repo_name, commit, persistence)
 
 
 def determine_average_complexity(repo_name, commit, persistence):
@@ -101,7 +105,25 @@ def determine_cyclomatic_complexity(repo_name, commit, persistence):
                     persistence.insert_document(item, repo_name, Persistence.CYCLOMATIC_COMPLEXITY_COL)
 
 
-# TODO issue with extensions as keys (. operator)
+def determine_raw_metrics(repo_name, commit, persistence):
+    raw_metrics = Radon.get_raw_metrics(repo_name, commit[1])
+    del raw_metrics[0]
+    raw_metrics[0]["commit"] = commit[1]
+
+    raw_items = list()
+    raw_items.append({"commit": commit[1]})
+
+    raw_keys = dict()
+    for file in raw_metrics[0]:
+        raw_keys[os.path.splitext(file)[0]] = raw_metrics[0][file]
+
+    raw_items[0]["files"] = [raw_keys]
+    JSON.pretty_print_json(raw_items[0])
+
+    persistence.insert_document(raw_items[0], repo_name, Persistence.RAW_METRICS_COL)
+
+
+# TODO issue with extensions as keys (. operator)? Works with AI-Art but not scikit-learn (more nested?)
 def determine_maintainability(repo_name, commit, persistence):
     maintainability_metrics = Radon.get_maintainability_index(repo_name, commit)
     maintainability_metrics[1]["commit"] = commit[1]

@@ -6,6 +6,7 @@ class Persistence:
     AVG_COMPLEXITY_COL = "average_complexity"
     CYCLOMATIC_COMPLEXITY_COL = "cyclomatic_complexity"
     MAINTAINABILITY_COL = "maintainability"
+    RAW_METRICS_COL = "raw_metrics"
 
     def __init__(self):
         self.client = MongoClient('mongodb://localhost:27017/code_analysis')
