@@ -10,6 +10,7 @@ from Git import GitCL
 from Helpers import File
 from Helpers import JSON
 from Persistence import Persistence
+from fnmatch import fnmatch
 
 PAGINATION = 100
 
@@ -21,16 +22,18 @@ repos_self_curated = [
     ["ajalt", "fuckitpy"],
     ["nvbn", "thefuck"],
     ["binux", "pyspider"],
-    ["scikit-learn", "scikit-learn"],  # <<< issues with keys
+    ["scikit-learn", "scikit-learn"],
     ["pyca", "cryptography"],
     ["pyca", "pyopenssl"]
 ]
 
 repos = [
-    ["scikit-learn", "scikit-learn"]
+    repos_self_curated[9]
 ]
 
 
+# TODO harvest n, perform analysis, clear, harvest n more from that point, ...
+# TODO prevents harvesting >1,000,000 repos in one go and analysing in one block
 def harvest_repositories(username, password):
     i = 1
     curr_repo_count = -1
@@ -40,7 +43,7 @@ def harvest_repositories(username, password):
     req = requests.get(url, auth=HTTPBasicAuth(username, password)).json()
     repo_count = req["total_count"]
 
-    # debug sentinel cap of 5 pages of repositories
+    # debug sentinel cap of n pages of repositories
     # while curr_repo_count != 0:
     while i < 2:
         url = "https://api.github.com/search/repositories?q=language:python&order=desc" + \
@@ -108,11 +111,12 @@ def generate_file_stats(repo_name, head, i):
 # generate metrics per commit via radon halstead analysis
 def generate_radon_stats(repo_name, commit, persistence):
     print("Exporting metrics for", repo_name, "to DB ...")
+
     determine_commit_details(repo_name, commit, persistence)
-    # determine_average_complexity(repo_name, commit, persistence)
-    # determine_cyclomatic_complexity(repo_name, commit, persistence)
-    # determine_maintainability(repo_name, commit, persistence)
-    # determine_raw_metrics(repo_name, commit, persistence)
+    determine_average_complexity(repo_name, commit, persistence)
+    determine_cyclomatic_complexity(repo_name, commit, persistence)
+    determine_maintainability(repo_name, commit, persistence)
+    determine_raw_metrics(repo_name, commit, persistence)
 
 
 def determine_commit_details(repo_name, commit, persistence):
@@ -127,7 +131,6 @@ def determine_average_complexity(repo_name, commit, persistence):
 def determine_cyclomatic_complexity(repo_name, commit, persistence):
     cyclomatic_metrics = Radon.get_cyclomatic_complexity(repo_name, commit)
 
-    # this loop complexity is ironic for something to get the complexity over files ...
     # gets the metrics for complexities over functions per file per commit
     for metric in cyclomatic_metrics:
         for file in metric:
@@ -140,40 +143,38 @@ def determine_cyclomatic_complexity(repo_name, commit, persistence):
 
 def determine_raw_metrics(repo_name, commit, persistence):
     raw_metrics = Radon.get_raw_metrics(repo_name, commit[1])
+
     del raw_metrics[0]
-    raw_metrics[0]["commit"] = commit[1]
 
+    raw_insert = dict()
     raw_items = list()
-    raw_items.append({"commit": commit[1]})
 
-    raw_keys = dict()
     for file in raw_metrics[0]:
-        raw_keys[os.path.splitext(file)[0]] = raw_metrics[0][file]
+        if os.path.splitext(file)[1] == ".py":
+            metric = raw_metrics[0][file]
+            metric["file"] = repo_name + "/" + file
+            raw_items.append(metric)
 
-    raw_items[0]["files"] = [raw_keys]
-    JSON.pretty_print_json(raw_items[0])
+    raw_insert["files"] = raw_items
+    raw_insert["commit"] = commit[1]
 
-    persistence.insert_document(raw_items[0], repo_name, Persistence.RAW_METRICS_COL)
+    persistence.insert_document(raw_insert, repo_name, Persistence.RAW_METRICS_COL)
 
 
-# TODO issue with extensions as keys (. operator)? Works with AI-Art but not scikit-learn (more nested?)
 def determine_maintainability(repo_name, commit, persistence):
-    maintainability_metrics = Radon.get_maintainability_index(repo_name, commit)
-    maintainability_metrics[1]["commit"] = commit[1]
+    # iterate over all files rather than one huge chunk
+    for path, subdirs, files in os.walk(repo_name):
+        for name in files:
+            file_path = os.path.join(path, name)
+            if fnmatch(name, "*.py"):
+                maintainability_metrics = Radon.get_file_maintainability_index(file_path)
 
-    maintainability_items = list()
-    maintainability_items.append({"commit": commit[1]})
+                # remove the .py extension
+                maintainability_metrics[0] = {os.path.splitext(file_path)[0]: maintainability_metrics[0][file_path]}
+                maintainability_metrics[0]["commit"] = commit[1]
 
-    maintainability_keys = dict()
-    for file in maintainability_metrics[1]:
-        maintainability_keys[os.path.splitext(file)[0]] = maintainability_metrics[1][file]
-
-    print(maintainability_items)
-    maintainability_items[0]["files"] = [maintainability_keys]
-
-    JSON.pretty_print_json(maintainability_keys)
-
-    persistence.insert_document(maintainability_items[0], repo_name, Persistence.MAINTAINABILITY_COL)
+                JSON.pretty_print_json(maintainability_metrics[0])
+                persistence.insert_document(maintainability_metrics[0], repo_name, Persistence.MAINTAINABILITY_COL)
 
 
 def print_collection(repo_name, persistence, collection):
@@ -215,11 +216,13 @@ def get_repo_data(repo_name, repo_account, commit_list):
 
 def main():
     username, password = GitCL.get_auth_details()
+
     # mass harvesting, uncomment to curate all python repos on GitHub
     # repos is a list of curated [repo_name, repo_account] of length ~1,511,164
-    repo_count, repos_curated = harvest_repositories(username, password)
+    # must change to harvest a pagination, process, store, continue with second pagination ...
+    # repo_count, repos_curated = harvest_repositories(username, password)
 
-    for repo in repos_curated:
+    for repo in repos:
         commit_list = []
         repo_account, repo_name = repo[0], repo[1]
         get_repo_data(repo_name, repo_account, commit_list)

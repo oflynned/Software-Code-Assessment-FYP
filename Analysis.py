@@ -51,6 +51,14 @@ class Radon:
         return metrics
 
     @staticmethod
+    def get_file_cyclomatic_complexity(file):
+        results = CommandLine.execute_cmd_get_result("radon cc -s -j ./" + file).decode("utf-8").split("\n")
+
+        metrics = list()
+        metrics.append(File.get_json_from_cmd(results))
+        return metrics
+
+    @staticmethod
     def get_raw_metrics(repo, commit):
         results = CommandLine.execute_cmd_get_result("cd " + repo + "; radon raw * -j").decode("utf-8").split("\n")
         metrics = list()
@@ -68,6 +76,14 @@ class Radon:
         metrics.append(File.get_commit_details(commit))
         metrics.append(File.get_json_from_cmd(results))
 
+        return metrics
+
+    @staticmethod
+    def get_file_maintainability_index(file):
+        results = CommandLine.execute_cmd_get_result("radon mi -j " + file).decode("utf-8").split("\n")
+
+        metrics = list()
+        metrics.append(File.get_json_from_cmd(results))
         return metrics
 
     @staticmethod
