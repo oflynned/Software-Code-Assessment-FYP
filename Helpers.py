@@ -64,12 +64,16 @@ class File:
         return json.loads(str(cmd_output[0]))
 
     @staticmethod
-    def get_commit_details(commit):
+    def get_commit_details(repo_name, commit, iteration, max_iterations):
         detail = dict()
         detail["sha"] = commit[0]
         detail["head"] = commit[1]
         detail["author"] = commit[2]
         detail["time"] = commit[3]
+        detail["iteration"] = iteration
+        detail["max_iterations"] = max_iterations
+        detail["repo"] = repo_name
+
         return detail
 
 

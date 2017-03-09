@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 import os
+import sys
+from fnmatch import fnmatch
+from pprint import pprint
 
-import lizard
 import requests
 from requests.auth import HTTPBasicAuth
 
@@ -10,30 +12,10 @@ from Git import GitCL
 from Helpers import File
 from Helpers import JSON
 from Persistence import Persistence
-from fnmatch import fnmatch
 
 PAGINATION = 100
 
-repos_self_curated = [
-    ["oflynned", "AI-Art"],
-    ["samshadwell", "TrumpScript"],
-    ["joke2k", "faker"],
-    ["Russell91", "pythonpy"],
-    ["ajalt", "fuckitpy"],
-    ["nvbn", "thefuck"],
-    ["binux", "pyspider"],
-    ["scikit-learn", "scikit-learn"],
-    ["pyca", "cryptography"],
-    ["pyca", "pyopenssl"]
-]
 
-repos = [
-    repos_self_curated[9]
-]
-
-
-# TODO harvest n, perform analysis, clear, harvest n more from that point, ...
-# TODO prevents harvesting >1,000,000 repos in one go and analysing in one block
 def harvest_repositories(username, password):
     i = 1
     curr_repo_count = -1
@@ -44,8 +26,7 @@ def harvest_repositories(username, password):
     repo_count = req["total_count"]
 
     # debug sentinel cap of n pages of repositories
-    # while curr_repo_count != 0:
-    while i < 2:
+    while curr_repo_count != 0:
         url = "https://api.github.com/search/repositories?q=language:python&order=desc" + \
               "&page=" + str(i) + "&per_page=" + str(PAGINATION)
         req = requests.get(url, auth=HTTPBasicAuth(username, password))
@@ -63,7 +44,7 @@ def harvest_repositories(username, password):
     return repo_count, curated_repos
 
 
-def iterate_over_commits(repo_name, commit_list):
+def iterate_over_commits(repo_name, repo_account, commit_list):
     # invert list to iterate from start to end
     commit_list = list(reversed(commit_list))
     print("Analysing", str(len(commit_list)), "commits", "...")
@@ -90,37 +71,43 @@ def iterate_over_commits(repo_name, commit_list):
         # iterate through files changed to get score
         print("Appending metrics for commit", head)
 
-        generate_radon_stats(repo_name, commit, persistence)
+        generate_radon_stats(repo_account, repo_name, commit, persistence, i + 1, len(commit_list))
         total_commits.append(commit)
 
 
-# generate metrics per file changed per commit
-# TODO does not use MongoDB collection
-def generate_file_stats(repo_name, head, i):
-    files_changes = GitCL.get_files_changed(repo_name, head)
-    for file in files_changes:
-        metrics = lizard.analyze_file(repo_name + "/" + file)
-        functions = []
-        for function in metrics.function_list:
-            this_function = function.__dict__
-            this_file = os.path.splitext(os.path.basename(file))[0]
-            functions.append(this_function)
-            File.export_metrics(repo_name, this_file, functions, i, True)
-
-
 # generate metrics per commit via radon halstead analysis
-def generate_radon_stats(repo_name, commit, persistence):
+def generate_radon_stats(repo_account, repo_name, commit, persistence, index, max_iterations):
     print("Exporting metrics for", repo_name, "to DB ...")
 
-    determine_commit_details(repo_name, commit, persistence)
+    # note that this is updated per iteration -- avoids horrendous amount of aggregate left joins across dbs
+    record_repo(index, max_iterations, repo_account, repo_name, persistence)
+
+    determine_commit_details(repo_name, commit, persistence, index, max_iterations)
     determine_average_complexity(repo_name, commit, persistence)
-    determine_cyclomatic_complexity(repo_name, commit, persistence)
+    determine_cyclomatic_complexity(repo_name, commit, persistence, index, max_iterations)
     determine_maintainability(repo_name, commit, persistence)
-    determine_raw_metrics(repo_name, commit, persistence)
+    determine_raw_metrics(repo_name, commit, persistence, index, max_iterations)
 
 
-def determine_commit_details(repo_name, commit, persistence):
-    persistence.insert_document(File.get_commit_details(commit), repo_name, Persistence.COMMITS_COL)
+def record_repo(index, max_iterations, repo_account, repo_name, persistence):
+    record = persistence.get_constrained_data("jobs", Persistence.REPOS_COL,
+                                              {"repo_name": repo_name, "account": repo_account})
+
+    new_data = dict()
+    new_data["account"] = repo_account
+    new_data["repo_name"] = repo_name
+    new_data["max_iterations"] = max_iterations
+    new_data["iteration"] = index
+
+    if record is not None:
+        persistence.clear_jobs_w_constraint({"repo_name": repo_name, "account": repo_account})
+
+    persistence.insert_document(new_data, "jobs", Persistence.REPOS_COL)
+
+
+def determine_commit_details(repo_name, commit, persistence, index, max_iterations):
+    persistence.insert_document(File.get_commit_details(repo_name, commit, index, max_iterations),
+                                repo_name, Persistence.COMMITS_COL)
 
 
 def determine_average_complexity(repo_name, commit, persistence):
@@ -128,8 +115,8 @@ def determine_average_complexity(repo_name, commit, persistence):
     persistence.insert_document(average_complexity[0], repo_name, Persistence.AVG_COMPLEXITY_COL)
 
 
-def determine_cyclomatic_complexity(repo_name, commit, persistence):
-    cyclomatic_metrics = Radon.get_cyclomatic_complexity(repo_name, commit)
+def determine_cyclomatic_complexity(repo_name, commit, persistence, index, max_iterations):
+    cyclomatic_metrics = Radon.get_cyclomatic_complexity(repo_name, commit, index, max_iterations)
 
     # gets the metrics for complexities over functions per file per commit
     for metric in cyclomatic_metrics:
@@ -141,8 +128,8 @@ def determine_cyclomatic_complexity(repo_name, commit, persistence):
                     persistence.insert_document(item, repo_name, Persistence.CYCLOMATIC_COMPLEXITY_COL)
 
 
-def determine_raw_metrics(repo_name, commit, persistence):
-    raw_metrics = Radon.get_raw_metrics(repo_name, commit[1])
+def determine_raw_metrics(repo_name, commit, persistence, index, max_iteration):
+    raw_metrics = Radon.get_raw_metrics(repo_name, commit[1], index, max_iteration)
 
     del raw_metrics[0]
 
@@ -214,19 +201,35 @@ def get_repo_data(repo_name, repo_account, commit_list):
         i += 1
 
 
-def main():
+def harvest_github():
     username, password = GitCL.get_auth_details()
 
     # mass harvesting, uncomment to curate all python repos on GitHub
     # repos is a list of curated [repo_name, repo_account] of length ~1,511,164
     # must change to harvest a pagination, process, store, continue with second pagination ...
-    # repo_count, repos_curated = harvest_repositories(username, password)
+    repo_count, repos_curated = harvest_repositories(username, password)
 
-    for repo in repos:
+    for i, repo in enumerate(repos_curated):
+        print("Repo", str(i), "/", repo_count)
+
         commit_list = []
         repo_account, repo_name = repo[0], repo[1]
         get_repo_data(repo_name, repo_account, commit_list)
-        iterate_over_commits(repo_name, commit_list)
+        iterate_over_commits(repo_name, repo_account, commit_list)
+
+
+def harvest_repo():
+    commit_list = []
+
+    repo_account = sys.argv[1]
+    repo_name = sys.argv[2]
+
+    get_repo_data(repo_name, repo_account, commit_list)
+    iterate_over_commits(repo_name, repo_account, commit_list)
+
+
+def main():
+    harvest_repo()
 
 
 if __name__ == "__main__":

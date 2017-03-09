@@ -41,11 +41,11 @@ class Radon:
         return result[len(result) - 1]
 
     @staticmethod
-    def get_cyclomatic_complexity(repo, commit):
+    def get_cyclomatic_complexity(repo, commit, iteration, max_iteration):
         results = CommandLine.execute_cmd_get_result("cd " + repo + "; radon cc * -s -j").decode("utf-8").split("\n")
 
         metrics = list()
-        metrics.append(File.get_commit_details(commit))
+        metrics.append(File.get_commit_details(repo, commit, iteration, max_iteration))
         metrics.append(File.get_json_from_cmd(results))
 
         return metrics
@@ -59,21 +59,21 @@ class Radon:
         return metrics
 
     @staticmethod
-    def get_raw_metrics(repo, commit):
+    def get_raw_metrics(repo, commit, index, max_iteration):
         results = CommandLine.execute_cmd_get_result("cd " + repo + "; radon raw * -j").decode("utf-8").split("\n")
         metrics = list()
 
-        metrics.append(File.get_commit_details(commit))
+        metrics.append(File.get_commit_details(repo, commit, index, max_iteration))
         metrics.append(File.get_json_from_cmd(results))
 
         return metrics
 
     @staticmethod
-    def get_maintainability_index(repo, commit):
+    def get_maintainability_index(repo, commit, index, max_iterations):
         results = CommandLine.execute_cmd_get_result("cd " + repo + "; radon mi * -j").decode("utf-8").split("\n")
 
         metrics = list()
-        metrics.append(File.get_commit_details(commit))
+        metrics.append(File.get_commit_details(repo, commit, index, max_iterations))
         metrics.append(File.get_json_from_cmd(results))
 
         return metrics
