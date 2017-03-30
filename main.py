@@ -2,15 +2,13 @@
 import os
 import sys
 from fnmatch import fnmatch
-from pprint import pprint
 
 import requests
 from requests.auth import HTTPBasicAuth
 
 from Analysis import Radon
 from Git import GitCL
-from Helpers import File
-from Helpers import JSON
+from Helpers import File, JSON, Commit
 from Persistence import Persistence
 
 PAGINATION = 100
@@ -37,6 +35,7 @@ def harvest_repositories(username, password):
         print("Retrieved commit pagination", "(" + str(PAGINATION * i) + ")", "...")
 
         for j, item in enumerate(repo_curation["items"]):
+            print(item)
             curated_repos.append([item["owner"]["login"], item["name"]])
 
         i += 1
@@ -44,7 +43,7 @@ def harvest_repositories(username, password):
     return repo_count, curated_repos
 
 
-def iterate_over_commits(repo_name, repo_account, commit_list):
+def iterate_over_commits(repo_name, repo_account, commit_list, arguments):
     # invert list to iterate from start to end
     commit_list = list(reversed(commit_list))
     print("Analysing", str(len(commit_list)), "commits", "...")
@@ -59,6 +58,10 @@ def iterate_over_commits(repo_name, repo_account, commit_list):
 
     # inverted traversal of the commit list (oldest to newest)
     for i, commit in enumerate(commit_list):
+        # hash the identity to mask the author's identity
+        # remove this to show real email addresses in data/graphs
+        commit[2] = str(Commit.obfuscate_identity(commit[2]))
+
         head = commit[1]
         author = commit[2]
         time = commit[3]
@@ -68,25 +71,43 @@ def iterate_over_commits(repo_name, repo_account, commit_list):
         print("\nCommit " + version, head, author, time)
         GitCL.set_repo_commit(repo_name, head)
 
+        # remove this before demo
+        # print(Commit.deobfuscate_identity(author), "has been hashed to", author)
+
         # iterate through files changed to get score
         print("Appending metrics for commit", head)
 
-        generate_radon_stats(repo_account, repo_name, commit, persistence, i + 1, len(commit_list))
+        generate_radon_stats(repo_account, repo_name, commit, persistence, i + 1, len(commit_list), arguments)
         total_commits.append(commit)
 
 
 # generate metrics per commit via radon halstead analysis
-def generate_radon_stats(repo_account, repo_name, commit, persistence, index, max_iterations):
+def generate_radon_stats(repo_account, repo_name, commit, persistence, index, max_iterations, arguments):
     print("Exporting metrics for", repo_name, "to DB ...")
 
     # note that this is updated per iteration -- avoids horrendous amount of aggregate left joins across dbs
     record_repo(index, max_iterations, repo_account, repo_name, persistence)
 
-    determine_commit_details(repo_name, commit, persistence, index, max_iterations)
-    determine_average_complexity(repo_name, commit, persistence)
-    determine_cyclomatic_complexity(repo_name, commit, persistence, index, max_iterations)
-    determine_maintainability(repo_name, commit, persistence)
-    determine_raw_metrics(repo_name, commit, persistence, index, max_iterations)
+    """
+    Generate according to cmd line arguments
+    --commits-only
+    --get-maintainability
+    """
+    if "--commits-only" in arguments:
+        determine_commit_details(repo_name, commit, persistence, index, max_iterations)
+    elif "--get-maintainability" in arguments:
+        # warning -- subsequent overhead in generating maintainability indices!
+        # prepare for a long wait d(^_^)b
+        determine_commit_details(repo_name, commit, persistence, index, max_iterations)
+        determine_average_complexity(repo_name, commit, persistence)
+        determine_cyclomatic_complexity(repo_name, commit, persistence, index, max_iterations)
+        determine_maintainability(repo_name, commit, persistence)
+        determine_raw_metrics(repo_name, commit, persistence, index, max_iterations)
+    elif len(arguments) is 0:
+        determine_commit_details(repo_name, commit, persistence, index, max_iterations)
+        determine_average_complexity(repo_name, commit, persistence)
+        determine_cyclomatic_complexity(repo_name, commit, persistence, index, max_iterations)
+        determine_raw_metrics(repo_name, commit, persistence, index, max_iterations)
 
 
 def record_repo(index, max_iterations, repo_account, repo_name, persistence):
@@ -224,8 +245,17 @@ def harvest_repo():
     repo_account = sys.argv[1]
     repo_name = sys.argv[2]
 
+    """
+    --commits-only
+    --show-identities
+    --get-maintainability
+    """
+    arguments = []
+    if len(sys.argv) > 2:
+        arguments = sys.argv[3:]
+
     get_repo_data(repo_name, repo_account, commit_list)
-    iterate_over_commits(repo_name, repo_account, commit_list)
+    iterate_over_commits(repo_name, repo_account, commit_list, arguments)
 
 
 def main():

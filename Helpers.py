@@ -20,11 +20,15 @@ class Commit:
 
     @staticmethod
     def obfuscate_identity(real_identity):
-        return base64.b16encode(bytes(real_identity))
+        encoding = base64.encodebytes(bytes(real_identity, 'utf8'))
+        encoding = encoding.decode("utf-8").replace("\n", "")
+        return encoding
 
     @staticmethod
     def deobfuscate_identity(hashed_identity):
-        return base64.b16decode(bytes(hashed_identity))
+        decoded = base64.decodebytes(bytes(hashed_identity, 'utf-8'))
+        decoded = decoded.decode("utf-8")
+        return decoded
 
 
 class File:
